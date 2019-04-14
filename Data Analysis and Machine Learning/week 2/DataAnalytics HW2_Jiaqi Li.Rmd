@@ -1,0 +1,111 @@
+---
+title: "Data Analytics HW1_Jiaqi Li"
+author: "Jiaqi Li"
+date: "April 13, 2019"
+output: pdf_document
+---
+
+#Problem Set 2
+
+```{r}
+options(warn = -1)
+library(data.table)
+library(ggplot2)
+library(dplyr)
+library(haven)
+library(gridExtra)
+library(lfe)
+library(stargazer)
+```
+
+##Question 1
+###1.
+```{r}
+#-------------------------------part 1-----------------------------#
+data = read_dta("StockRetAcct_insample.dta") %>% as.data.table()
+data[,ExRet:=exp(lnAnnRet)-exp(lnRf)]
+setorder(data, FirmID, year)
+time = unique(data$year)
+p_ret = NULL
+for(i in min(time):max(time)){
+  temp = data[year == i,]
+  temp_ret = lm(ExRet~lnInv, data = temp) %>% coef()
+  p_ret = rbind(p_ret,temp_ret[2])
+}
+p_stat = list(mean_ret = mean(p_ret), std_ret = sd(p_ret),
+              SR = mean(p_ret)/sd(p_ret),
+              t_stat = sqrt(1+max(time)-min(time))*mean(p_ret)/sd(p_ret))
+print(p_stat)
+```
+
+###2
+$$ExRet_{i,t} = \delta_{0,t} + \delta_{1,t}lnInv_{i,t-1}$$
+$\\$
+
+$lnInv_{i,t-1} =$
+$\begin{bmatrix}
+1 & lnInv_{1,t-1} \\
+. & . \\
+. & . \\
+. & . \\
+1 & lnInv_{N,t-1}
+\end{bmatrix}$
+,
+$ExRet_{t} =$
+$\begin{bmatrix}
+ExRet_{1,t-1} \\
+. \\
+. \\
+. \\
+ExRet_{N,t-1}
+\end{bmatrix}$
+,
+then
+$\begin{bmatrix}
+\delta_{0,t} \\
+\delta_{1,t}
+\end{bmatrix}$
+$= (lnInv_{t-1}'lnInv_{t-1})^{-1}lnInv_{t-1}'ExRet_t$
+
+$\\$
+
+$(lnInv_{t-1}'lnInv_{t-1})^{-1} = \frac{1}{N}\frac{1}{\frac{1}{N}\sum^{N}_{i=1}lnInv^2_{i,t-1}-(\frac{1}{N}\sum^N_{i=1}lnInv_{i,t-1})^2}$
+$\begin{bmatrix}
+\frac{1}{N}\sum^{N}_{i=1}lnInv^2_{i,t-1} & -\frac{1}{N}\sum^{N}_{i=1}lnInv_{i,t-1} \\
+-\frac{1}{N}\sum^{N}_{i=1}lnInv_{i,t-1} & 1
+\end{bmatrix}$
+
+$\\$
+
+$E_N[lnInv_{i,t-1}]=\frac{1}{N}\sum^{N}_{i=1}lnInv_{i,t-1}$,
+$Var_N[lnInv_{i,t-1}]=\frac{1}{N}\sum^{N}_{i=1}lnInv^2_{i,t-1} - (\frac{1}{N}\sum^{N}_{i=1}lnInv_{i,t-1})^2$
+
+$\\$
+
+$(lnInv_{t-1}'lnInv_{t-1})^{-1} = \frac{1}{N}\frac{1}{Var_N[lnInv_{i,t-1}]}$
+$\begin{bmatrix}
+E_N[lnInv^2_{i,t-1}] & -E_N[lnInv_{i,t-1}] \\
+-E_N[lnInv_{i,t-1}] & 1
+\end{bmatrix}$
+
+$\\$
+
+$(lnInv_{t-1}'lnInv_{t-1})^{-1}lnInv_{t-1}'=\frac{1}{N}\frac{1}{Var_N[lnInv_{i,t-1}]}$
+$\begin{bmatrix}
+E_N[lnInv^2_{i,t-1}] & -E_N[lnInv_{i,t-1}] \\
+-E_N[lnInv_{i,t-1}] & 1
+\end{bmatrix}$
+$\begin{bmatrix}
+1 & . . . & 1\\
+lnInv_{1,t-1} & . . . & lnInv_{N,t-1}
+\end{bmatrix}$
+
+$\\$
+
+$\delta_{1,t} = \sum^{N}_{i=1}\frac{1}{N}\frac{lnInv_{i,t-1}-E_N[lnInv_{i,t-1}]}{Var_N[lnInv_{i,t-1}]}ExRet_{i,t}$
+
+$\\$
+
+$weight_{i,t-1} = \frac{1}{N}\frac{lnInv_{i,t-1}-E_N[lnInv_{i,t-1}]}{Var_N[lnInv_{i,t-1}]}$ ****************
+$\\$(then 
+$\delta_{1,t} = \sum^{N}_{i=1}weight_{i,t-1}ExRet_{i,t}$)
