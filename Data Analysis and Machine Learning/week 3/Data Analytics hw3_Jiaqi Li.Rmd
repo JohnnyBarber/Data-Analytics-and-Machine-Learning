@@ -1,0 +1,257 @@
+---
+title: "Date Analytics HW3"
+author: "Jiaqi Li"
+date: "April 21, 2019"
+output: pdf_document
+---
+
+#Question 1
+
+```{r}
+options(warn = -1)
+library(ggplot2)
+library(data.table)
+library(dplyr)
+library(haven)
+```
+##part a
+##(i)
+```{r}
+####################################################################
+#                              (a)                                 #
+####################################################################
+#------------------------------(i)---------------------------------#
+data = read_dta("LendingClub_LoanStats3a_v12.dta") %>% as.data.table()
+data = data[loan_status == "Fully Paid" | loan_status == "Charged Off",]
+data[,Default := ifelse(loan_status == "Charged Off",1,0)]
+```
+
+##(ii)
+```{r}
+#-----------------------------(ii)---------------------------------#
+Def_rate = mean(data$Default)
+Def_rate
+```
+
+$\\$
+The average default rate is abour 14.35%.
+$\\$
+
+##part b
+##(i)
+```{r}
+####################################################################
+#                              (b)                                 #
+####################################################################
+#------------------------------(i)---------------------------------#
+reg = glm(Default~grade,family = "binomial",data=data)
+summary(reg)
+```
+
+$\\$
+Based on the regression, all the coefficients are significant different than zero. Only the intercept is negative, which means only lending money to borrowers of grade A could decrease the overall default rate while lending money to anyone who is not in grade A level will increase the default rate. Lending money to borrowers in grade G, which is the lowest grade, will largely increase the default rate. These coefficients make sense since the lower the creditworthiness of the borrowers, the higher the probability they will default.
+$\\$
+
+##(ii)
+```{r}
+library(car)
+Anova(reg)
+```
+
+$\\$
+The Chi-square is 1508.1 and F-stat is about 0, which means the F test shows that the model perform much better than the null model.
+$\\$
+
+##(iii)
+```{r}
+#-----------------------------(iii)--------------------------------#
+phat_temp = jitter(predict(reg,type="response")) 
+deciles = cut(phat_temp,breaks = quantile(phat_temp,probs=c(seq(from=0,to=1,by=0.1))),
+              include.lowest = TRUE)
+deciles = as.numeric(deciles)
+df = data.frame(deciles=deciles,phat=phat_temp,default=data$Default)
+lift = aggregate(df,by=list(deciles),FUN="mean",data=df)
+lift = lift[,c(2,4)]
+lift[,3] = lift[,2]/mean(data$Default)
+names(lift) = c("decile","Mean Response","Lift Factor")
+lift
+```
+
+$\\$
+From the table, we can see that the lift factro is in a decreasing order in general. Only the 5th observation is smaller than the previous one, which is negligible. Such a monotonic drecreasing pattern indicates that our model is good model.  The mean response rate for high fitted probabilities are much greater than for low fitted probabilities.
+$\\$
+
+```{r}
+simple_roc <- function(labels, scores){
+  labels <- labels[order(scores, decreasing=TRUE)]
+  data.frame(TPR=cumsum(labels)/sum(labels),
+             FPR=cumsum(!labels)/sum(!labels),
+             labels)
+}
+phat = predict(reg,type="response")
+glm_simple_roc <- simple_roc(data$Default=="1", phat)
+TPR <- glm_simple_roc$TPR
+FPR <- glm_simple_roc$FPR
+
+qplot(FPR,TPR,xlab="FPR",ylab="TPR",col=I("blue"),
+      main="ROC Curve for Logistic Regression Default Model",
+      size=I(0.75)) +
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), size=I(1.0)) + 
+  theme_bw()
+```
+
+$\\$
+TPR is the True Positive Rate where True positive means predicted default is the true default. FPR is False Positive Rate where False Positive is the predicted default is not the true default.
+$\\$
+$\\$
+The random guess is the diagnal line in the above plot while the ROC curve, which is a measure of how informative a given model is, is the blue line. Based on the plot, we can see that the ROC is not so far from the random guess, which may indicate that the model is not very informative but the model does a better job than the random guess.
+$\\$
+
+##(iiii)
+```{r}
+#-----------------------------(iiii)-------------------------------#
+P = sum(data$Default)
+N = -sum(data$Default-1)
+TN = N*(1-FPR)
+FN = P*(1-TPR)
+temp1 = cbind(profit = TN*1-FN*10,phat = sort(phat,decreasing = T)) %>% 
+  as.data.frame()
+temp2 = cbind(TPR,FPR) %>% as.data.frame()
+temp = cbind(temp1,temp2)
+cutoff = temp[which(temp$profit == max(temp$profit)),]
+cutoff
+
+qplot(FPR,TPR,xlab="FPR",ylab="TPR",col=I("blue"),
+      main="ROC Curve for Logistic Regression Default Model with cutoff (orange)",
+      size=I(0.75)) +
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), size=I(1.0)) + 
+  geom_point(aes(x=cutoff$FPR,y=cutoff$TPR),shape = 16,
+             color = I("orange"), size = 3) + 
+  theme_bw()
+
+default_prob = cutoff$phat
+default_prob
+```
+
+$\\$
+In this senario, the cutoff default probability I should use as my decision criterion to maximize profits is 5.978%. The cutoff point is shown on the ROC curve above.
+$\\$
+
+##part c
+##(i)
+```{r}
+####################################################################
+#                              (c)                                 #
+####################################################################
+#------------------------------(i)---------------------------------#
+reg_ci = glm(Default~loan_amnt+annual_inc,family = "binomial",data = data)
+summary(reg_ci)
+```
+
+$\\$
+Based on the summary above, all the variables are significant. Higher loan amount could increase the default rate and higher annual income would decrease the default rate based on the coefficient signs.
+$\\$
+
+```{r}
+phat_ci = jitter(predict(reg_ci,type="response")) 
+deciles_ci = cut(phat_ci,breaks = quantile(phat_ci,probs=c(seq(from=0,to=1,by=0.1))),
+              include.lowest = TRUE)
+deciles_ci = as.numeric(deciles_ci)
+df_ci = data.frame(deciles=deciles_ci,phat=phat_ci,default=data$Default)
+lift_ci = aggregate(df_ci,by=list(deciles_ci),FUN="mean",data=df_ci)
+lift_ci = lift_ci[,c(2,4)]
+lift_ci[,3] = lift_ci[,2]/mean(data$Default)
+names(lift_ci) = c("decile","Mean Response","Lift Factor")
+lift_ci
+
+phat_ci = predict(reg_ci,type="response")
+glm_simple_roc_ci <- simple_roc(data$Default=="1", phat_ci)
+TPR_ci <- glm_simple_roc_ci$TPR
+FPR_ci <- glm_simple_roc_ci$FPR
+
+qplot(FPR_ci,TPR_ci,xlab="FPR",ylab="TPR",col=I("red"),
+      main="i (red) vs grade (blue)",
+      size=I(0.75)) +
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), size=I(1.0)) + 
+  geom_line(aes(y=TPR),color=I("blue"),size=I(0.75),linetype = 2) +
+  theme_bw()
+```
+
+$\\$
+Based on the lift table, the lift factors show a monotonic decreasing order with a very little noise in general, which means the model is a fairly good fit. However, when comparing with the model considering only the grade, this model using only loan amount and annual income is less informative because it is under the model considering only grade.
+$\\$
+
+##(ii)
+```{r}
+#-----------------------------(ii)---------------------------------#
+reg_cii = glm(Default~loan_amnt+annual_inc+term+int_rate,family = "binomial",data = data)
+summary(reg_cii)
+```
+
+$\\$
+Based on the summary above, we can see that both the coefficients of maturity of the loan and the interest rate are positive, which means that both of these 2 variables could increase the default probability. By intuition, the longer maturity the loan take and the higher the interest rate, the higher the default probability coud be. Adding these 2 variables makes loan amount variable not significant anymore.
+$\\$
+
+```{r}
+phat_cii = jitter(predict(reg_cii,type="response")) 
+deciles_cii = cut(phat_cii,breaks = quantile(phat_cii,probs=c(seq(from=0,to=1,by=0.1))),
+                 include.lowest = TRUE)
+deciles_cii = as.numeric(deciles_cii)
+df_cii = data.frame(deciles=deciles_cii,phat=phat_cii,default=data$Default)
+lift_cii = aggregate(df_cii,by=list(deciles_cii),FUN="mean",data=df_cii)
+lift_cii = lift_cii[,c(2,4)]
+lift_cii[,3] = lift_cii[,2]/mean(data$Default)
+names(lift_cii) = c("decile","Mean Response","Lift Factor")
+lift_cii
+
+phat_cii = predict(reg_cii,type="response")
+glm_simple_roc_cii <- simple_roc(data$Default=="1", phat_cii)
+TPR_cii <- glm_simple_roc_cii$TPR
+FPR_cii <- glm_simple_roc_cii$FPR
+
+qplot(FPR_cii,TPR_cii,xlab="FPR",ylab="TPR",col=I("green"),
+      main="ii (green) vs i (red) vs grade (blue)",
+      size=I(0.75)) +
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), size=I(1.0)) + 
+  geom_line(aes(y=TPR),color=I("blue"),size=I(0.75),linetype = 2) +
+  geom_line(aes(y=TPR_ci),color=I("red"),size=I(0.75),linetype = 2) +
+  theme_bw()
+```
+
+$\\$
+Based on the lift table, the lift factors show a monotonic decreasing order, which means the model is a pretty good fit. When comparing with the model considering only the grade, this model using the loan amount, the annual income, the maturity of the loan, and the interest rate is more informative because it is above the model considering only grade. The reason could be that the default rate depends heavily on maturity and the interest rate. Longer maturity indicates higher volatility and higher interest rate indicates higher interest of the loan, which makes the loan harder to be paid in full.
+$\\$
+
+##(iii)
+```{r}
+#----------------------------(iii)---------------------------------#
+data[,int_rate_2 := int_rate^2]
+reg_ciii = glm(Default~loan_amnt+annual_inc+term+int_rate+int_rate_2,family = "binomial",data = data)
+summary(reg_ciii)
+#qplot(int_rate, color = I("red"), data=data)
+#qplot(int_rate_2,color = I("blue"), data=data)
+```
+
+$\\$
+Based on the summary above, the variable of square of interest rate is significant due to its very small p-value. The higher the square of interest rate, the lower the default probability is due to the negative sign of the coefficient of the square of interest rate. The higher the interest rate, the higher the default probability is due to the positive sign of the coefficient of the interest rate. The relationship is that when the interest rate is extremely high, as the interest rate keeps increasing, the interest rate does not have much effect anymore overall becasue the square interest rate is also very high, which cancels some effects of the interest rate; when the interest rate is extremely low, as the interest rate keeps increasing, the interest rate will have more and more effects while the square interest rate does not have much effect because the square of a very small number (smaller than 1) is very small.
+$\\$
+
+```{r}
+phat_ciii = predict(reg_ciii,type="response")
+phat_ciii = jitter(predict(reg_ciii,type="response")) 
+glm_simple_roc_ciii <- simple_roc(data$Default=="1", phat_ciii)
+TPR_ciii <- glm_simple_roc_ciii$TPR
+FPR_ciii <- glm_simple_roc_ciii$FPR
+
+qplot(FPR_ciii,TPR_ciii,xlab="FPR",ylab="TPR",col=I("pink"),
+      main="iii(pink) vs ii (green) vs i (red) vs grade (blue)",
+      size=I(0.75)) +
+  geom_segment(aes(x = 0, xend = 1, y = 0, yend = 1), size=I(1.0)) + 
+  geom_line(aes(y=TPR),color=I("blue"),size=I(0.75),linetype = 2) +
+  geom_line(aes(y=TPR_ci),color=I("red"),size=I(0.75),linetype = 2) +
+  geom_line(aes(y=TPR_cii),color=I("green"),size=I(0.75),linetype = 2) +
+  theme_bw()
+```
+
+$\\$
+Based on the plot, adding the square of the interest rate does not make any difference to the ROC curve.
